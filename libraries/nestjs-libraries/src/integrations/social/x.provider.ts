@@ -6,6 +6,9 @@ import {
   AuthTokenDetails,
   PendingCheckResponse,
   PostDetails,
+  EngagementInput,
+  EngagementParams,
+  EngagementTarget,
   PostResponse,
   SocialProvider,
 } from '@gitroom/nestjs-libraries/integrations/social/social.integrations.interface';
@@ -1538,6 +1541,87 @@ export class XProvider extends SocialAbstract implements SocialProvider {
         : []),
     ];
   };
+
+  // Needs an X API plan that includes recent search (Basic or higher)
+  async fetchEngagement(
+    integration: Integration,
+    accessToken: string,
+    params: EngagementParams
+  ): Promise<EngagementInput[]> {
+    const client = await this.getClient(accessToken);
+    // Recent search only covers the last 7 days
+    const startTime = new Date(
+      Math.max(params.since.getTime(), Date.now() - 6 * 24 * 3600 * 1000)
+    ).toISOString();
+    const exclude = `-from:${integration.profile} -is:retweet`;
+    const queries: Array<{
+      query: string;
+      kind: EngagementInput['kind'];
+      postId?: string;
+    }> = [
+      ...(params.kinds.includes('comment')
+        ? params.posts.map((post) => ({
+            query: `conversation_id:${post.releaseId} ${exclude}`,
+            kind: 'comment' as const,
+            postId: post.id,
+          }))
+        : []),
+      ...(params.kinds.includes('keyword')
+        ? params.keywords.map((keyword) => ({
+            query: `${keyword} ${exclude}`,
+            kind: 'keyword' as const,
+          }))
+        : []),
+    ];
+
+    const items: EngagementInput[] = [];
+    for (const search of queries) {
+      const result = await client.v2
+        .search(search.query, {
+          start_time: startTime,
+          max_results: 25,
+          'tweet.fields': ['author_id', 'created_at', 'conversation_id'],
+          expansions: ['author_id'],
+          'user.fields': ['username', 'name'],
+        })
+        .catch(() => null);
+      if (!result) {
+        continue;
+      }
+
+      for (const tweet of result.tweets) {
+        const author = result.includes.author(tweet);
+        items.push({
+          kind: search.kind,
+          postId: search.postId,
+          externalId: tweet.id,
+          threadExternalId: tweet.conversation_id || tweet.id,
+          authorName: author?.name || '',
+          authorHandle: author?.username || '',
+          authorUrl: author ? `https://x.com/${author.username}` : undefined,
+          content: tweet.text,
+          url: `https://x.com/${author?.username || 'i'}/status/${tweet.id}`,
+          receivedAt: new Date(tweet.created_at || Date.now()),
+        });
+      }
+    }
+
+    return items;
+  }
+
+  async replyEngagement(
+    integration: Integration,
+    accessToken: string,
+    item: EngagementTarget,
+    text: string
+  ) {
+    const client = await this.getClient(accessToken);
+    const { data } = await client.v2.reply(
+      this.stripLinks() ? removeLinks(text) : text,
+      item.externalId
+    );
+    return { id: data.id };
+  }
 
   async analytics(
     id: string,

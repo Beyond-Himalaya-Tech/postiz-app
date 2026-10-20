@@ -76,6 +76,10 @@ export class MastodonCustomProvider extends MastodonProvider {
 
   // The user's instance URL, saved encrypted at connection time. Falls back to
   // the default instance for legacy integrations that predate storing it.
+  protected override engagementInstance(integration: Integration) {
+    return this.instanceUrl(integration);
+  }
+
   private instanceUrl(integration?: Integration) {
     try {
       const { instanceUrl } = JSON.parse(

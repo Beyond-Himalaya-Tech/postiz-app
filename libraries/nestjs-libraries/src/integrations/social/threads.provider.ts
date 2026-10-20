@@ -3,6 +3,9 @@ import {
   AuthTokenDetails,
   PendingCheckResponse,
   PostDetails,
+  EngagementInput,
+  EngagementParams,
+  EngagementTarget,
   PostResponse,
   SocialProvider,
 } from '@gitroom/nestjs-libraries/integrations/social/social.integrations.interface';
@@ -722,6 +725,69 @@ export class ThreadsProvider extends SocialAbstract implements SocialProvider {
         releaseURL: permalink,
       },
     ];
+  }
+
+  async fetchEngagement(
+    integration: Integration,
+    accessToken: string,
+    params: EngagementParams
+  ): Promise<EngagementInput[]> {
+    if (!params.kinds.includes('comment')) {
+      return [];
+    }
+
+    const items: EngagementInput[] = [];
+    for (const post of params.posts) {
+      const { data = [] } = await (
+        await fetch(
+          `https://graph.threads.net/v1.0/${post.releaseId}/replies?fields=id,text,username,timestamp,permalink&access_token=${accessToken}`
+        )
+      )
+        .json()
+        .catch(() => ({ data: [] }));
+
+      for (const reply of data) {
+        if (
+          reply.username !== integration.profile &&
+          new Date(reply.timestamp) > params.since
+        ) {
+          items.push({
+            kind: 'comment',
+            postId: post.id,
+            externalId: reply.id,
+            threadExternalId: post.releaseId,
+            authorName: reply.username,
+            authorHandle: reply.username,
+            authorUrl: `https://www.threads.net/@${reply.username}`,
+            content: reply.text || '',
+            url: reply.permalink,
+            receivedAt: new Date(reply.timestamp),
+          });
+        }
+      }
+    }
+
+    return items;
+  }
+
+  async replyEngagement(
+    integration: Integration,
+    accessToken: string,
+    item: EngagementTarget,
+    text: string
+  ) {
+    const contentId = await this.createTextContent(
+      integration.internalId,
+      accessToken,
+      text,
+      item.externalId
+    );
+    const { threadId } = await this.publishThread(
+      integration.internalId,
+      accessToken,
+      contentId
+    );
+    return { id: threadId };
   }
 
   async analytics(

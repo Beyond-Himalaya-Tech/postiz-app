@@ -1,6 +1,8 @@
 import {
   AuthTokenDetails,
   PostDetails,
+  EngagementParams,
+  EngagementTarget,
   PostResponse,
   SocialProvider,
 } from '@gitroom/nestjs-libraries/integrations/social/social.integrations.interface';
@@ -34,6 +36,8 @@ export class InstagramStandaloneProvider
     'instagram_business_content_publish',
     'instagram_business_manage_comments',
     'instagram_business_manage_insights',
+    // Direct messages in the engagement inbox, opt in: needs Meta app review
+    ...(process.env.ENGAGEMENT_MESSAGES === 'true' ? ['instagram_business_manage_messages'] : []),
   ];
     override maxConcurrentJob = 200; // Instagram standalone has stricter limits
   dto = InstagramDto;
@@ -246,6 +250,34 @@ export class InstagramStandaloneProvider
       accessToken,
       postDetails,
       integration,
+      'graph.instagram.com'
+    );
+  }
+
+  async fetchEngagement(
+    integration: Integration,
+    accessToken: string,
+    params: EngagementParams
+  ) {
+    return instagramProvider.fetchEngagement(
+      integration,
+      accessToken,
+      params,
+      'graph.instagram.com'
+    );
+  }
+
+  async replyEngagement(
+    integration: Integration,
+    accessToken: string,
+    item: EngagementTarget,
+    text: string
+  ) {
+    return instagramProvider.replyEngagement(
+      integration,
+      accessToken,
+      item,
+      text,
       'graph.instagram.com'
     );
   }

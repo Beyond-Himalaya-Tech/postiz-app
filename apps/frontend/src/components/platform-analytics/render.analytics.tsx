@@ -6,7 +6,7 @@ import { ChartSocial } from '@gitroom/frontend/components/analytics/chart-social
 import { LoadingComponent } from '@gitroom/frontend/components/layout/loading';
 import { useT } from '@gitroom/react/translation/get.transation.service.client';
 
-interface AnalyticsDataItem {
+export interface AnalyticsDataItem {
   label: string;
   data: Array<{ total: number; date: string }>;
   average?: boolean;
@@ -48,7 +48,7 @@ const TrendIndicator: FC<{ value: number; average?: boolean }> = ({
   );
 };
 
-const AnalyticsCard: FC<{
+export const AnalyticsCard: FC<{
   item: AnalyticsDataItem;
   total: string | number;
   index: number;

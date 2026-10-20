@@ -2,6 +2,9 @@ import {
   AnalyticsData,
   AuthTokenDetails,
   PostDetails,
+  EngagementInput,
+  EngagementParams,
+  EngagementTarget,
   PostResponse,
   SocialProvider,
 } from '@gitroom/nestjs-libraries/integrations/social/social.integrations.interface';
@@ -315,6 +318,89 @@ export class LinkedinPageProvider
       integration,
       'company'
     );
+  }
+
+  async fetchEngagement(
+    integration: Integration,
+    accessToken: string,
+    params: EngagementParams
+  ): Promise<EngagementInput[]> {
+    if (!params.kinds.includes('comment')) {
+      return [];
+    }
+
+    const own = `urn:li:organization:${integration.internalId}`;
+    const items: EngagementInput[] = [];
+    for (const post of params.posts) {
+      const { elements = [] } = await (
+        await fetch(
+          `https://api.linkedin.com/rest/socialActions/${encodeURIComponent(
+            post.releaseId
+          )}/comments`,
+          {
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+              'LinkedIn-Version': '202306',
+              'X-Restli-Protocol-Version': '2.0.0',
+            },
+          }
+        )
+      )
+        .json()
+        .catch(() => ({ elements: [] }));
+
+      for (const comment of elements) {
+        const created = new Date(comment.created?.time || 0);
+        if (comment.actor === own || created <= params.since) {
+          continue;
+        }
+
+        items.push({
+          kind: 'comment',
+          postId: post.id,
+          externalId: comment.commentUrn || comment.$URN,
+          threadExternalId: post.releaseId,
+          authorName: comment.actor,
+          authorHandle: comment.actor,
+          content: comment.message?.text || '',
+          url: `https://www.linkedin.com/feed/update/${post.releaseId}`,
+          receivedAt: created,
+        });
+      }
+    }
+
+    return items;
+  }
+
+  async replyEngagement(
+    integration: Integration,
+    accessToken: string,
+    item: EngagementTarget,
+    text: string
+  ) {
+    const response = await this.fetch(
+      `https://api.linkedin.com/rest/socialActions/${encodeURIComponent(
+        item.externalId
+      )}/comments`,
+      {
+        method: 'POST',
+        headers: {
+          'LinkedIn-Version': '202306',
+          'X-Restli-Protocol-Version': '2.0.0',
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({
+          actor: `urn:li:organization:${integration.internalId}`,
+          object: item.threadExternalId,
+          parentComment: item.externalId,
+          message: { text },
+        }),
+      }
+    );
+
+    const { commentUrn, $URN } = await response.json();
+    return { id: commentUrn || $URN };
   }
 
   async analytics(

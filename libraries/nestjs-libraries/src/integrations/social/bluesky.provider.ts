@@ -2,6 +2,9 @@ import {
   AuthTokenDetails,
   PendingCheckResponse,
   PostDetails,
+  EngagementInput,
+  EngagementParams,
+  EngagementTarget,
   PostResponse,
   SocialProvider,
 } from '@gitroom/nestjs-libraries/integrations/social/social.integrations.interface';
@@ -830,6 +833,102 @@ export class BlueskyProvider extends SocialAbstract implements SocialProvider {
           .pop()}`,
       },
     ];
+  }
+
+  async fetchEngagement(
+    integration: Integration,
+    accessToken: string,
+    params: EngagementParams
+  ): Promise<EngagementInput[]> {
+    const agent = await this.getAgent(integration);
+    const items: EngagementInput[] = [];
+    const isOwn = (author: any) =>
+      author?.did === integration.internalId ||
+      author?.handle === integration.profile;
+
+    const toItem = (
+      post: any,
+      kind: EngagementInput['kind'],
+      postId?: string
+    ): EngagementInput => ({
+      kind,
+      postId,
+      externalId: post.uri,
+      threadExternalId: post.record?.reply?.root?.uri || post.uri,
+      authorName: post.author?.displayName || post.author?.handle,
+      authorHandle: post.author?.handle,
+      authorUrl: `https://bsky.app/profile/${post.author?.handle}`,
+      content: post.record?.text || '',
+      url: `https://bsky.app/profile/${post.author?.handle}/post/${post.uri
+        .split('/')
+        .pop()}`,
+      receivedAt: new Date(post.indexedAt),
+    });
+
+    if (params.kinds.includes('comment')) {
+      for (const post of params.posts) {
+        const { data } = await agent
+          .getPostThread({ uri: post.releaseId, depth: 1 })
+          .catch(() => ({ data: null as any }));
+        for (const reply of data?.thread?.replies || []) {
+          if (
+            reply.post &&
+            !isOwn(reply.post.author) &&
+            new Date(reply.post.indexedAt) > params.since
+          ) {
+            items.push(toItem(reply.post, 'comment', post.id));
+          }
+        }
+      }
+    }
+
+    if (params.kinds.includes('keyword')) {
+      for (const keyword of params.keywords) {
+        const { data } = await agent.app.bsky.feed
+          .searchPosts({
+            q: keyword,
+            since: params.since.toISOString(),
+            limit: 25,
+          })
+          .catch(() => ({ data: { posts: [] as any[] } }));
+        for (const post of data.posts) {
+          if (!isOwn(post.author)) {
+            items.push(toItem(post, 'keyword'));
+          }
+        }
+      }
+    }
+
+    return items;
+  }
+
+  async replyEngagement(
+    integration: Integration,
+    accessToken: string,
+    item: EngagementTarget,
+    text: string
+  ) {
+    const agent = await this.getAgent(integration);
+    const { data } = await agent.getPostThread({
+      uri: item.externalId,
+      depth: 0,
+    });
+    // @ts-ignore
+    const parent = data.thread.post;
+    const rt = new RichText({ text });
+    await rt.detectFacets(agent);
+
+    const { uri } = await agent.post({
+      text: rt.text,
+      facets: rt.facets,
+      createdAt: new Date().toISOString(),
+      reply: {
+        root: parent.record?.reply?.root || { uri: parent.uri, cid: parent.cid },
+        parent: { uri: parent.uri, cid: parent.cid },
+      },
+    });
+
+    return { id: uri };
   }
 
   @Plug({

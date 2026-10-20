@@ -121,6 +121,44 @@ export interface ISocialMediaIntegration {
     postDetails: PostDetails[],
     integration: Integration
   ): Promise<PostResponse[]>; // Schedules a new post
+
+  // Engagement inbox: reads comments on our published posts and keyword
+  // matches, and replies to one of them after a person approved the reply
+  fetchEngagement?(
+    integration: Integration,
+    accessToken: string,
+    params: EngagementParams
+  ): Promise<EngagementInput[]>;
+  replyEngagement?(
+    integration: Integration,
+    accessToken: string,
+    item: EngagementTarget,
+    text: string
+  ): Promise<{ id: string }>;
+}
+
+export interface EngagementParams {
+  since: Date;
+  // releaseId of the posts Postiz published on this channel
+  posts: Array<{ id: string; releaseId: string }>;
+  keywords: string[];
+  kinds: Array<'comment' | 'keyword' | 'message'>;
+}
+
+export interface EngagementTarget {
+  kind: 'comment' | 'mention' | 'keyword' | 'message';
+  externalId: string;
+  threadExternalId: string;
+}
+
+export interface EngagementInput extends EngagementTarget {
+  postId?: string; // our Post id when it is a comment on a post we published
+  authorName: string;
+  authorHandle: string;
+  authorUrl?: string;
+  content: string;
+  url?: string;
+  receivedAt: Date;
 }
 
 export type PostResponse = {

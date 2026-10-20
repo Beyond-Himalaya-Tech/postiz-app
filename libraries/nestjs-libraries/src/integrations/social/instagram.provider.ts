@@ -3,9 +3,13 @@ import {
   AuthTokenDetails,
   PendingCheckResponse,
   PostDetails,
+  EngagementInput,
+  EngagementParams,
+  EngagementTarget,
   PostResponse,
   SocialProvider,
 } from '@gitroom/nestjs-libraries/integrations/social/social.integrations.interface';
+import { FacebookProvider } from '@gitroom/nestjs-libraries/integrations/social/facebook.provider';
 import { makeSecureId } from '@gitroom/nestjs-libraries/services/make.secure.id';
 import { timer } from '@gitroom/helpers/utils/timer';
 import dayjs from 'dayjs';
@@ -21,6 +25,8 @@ import { Rules } from '@gitroom/nestjs-libraries/chat/rules.description.decorato
 import { META_GRAPH_API_VERSION } from '@gitroom/nestjs-libraries/integrations/social/facebook.provider';
 import { Tool } from '@gitroom/nestjs-libraries/integrations/tool.decorator';
 import { hasExtension } from '@gitroom/helpers/utils/has.extension';
+
+const facebookProvider = new FacebookProvider();
 
 @Rules(
   "Instagram should have at least one attachment, if it's a story, it can have only one picture"
@@ -41,6 +47,8 @@ export class InstagramProvider
     'instagram_content_publish',
     'instagram_manage_comments',
     'instagram_manage_insights',
+    // Direct messages in the engagement inbox, opt in: needs Meta app review
+    ...(process.env.ENGAGEMENT_MESSAGES === 'true' ? ['instagram_manage_messages'] : []),
   ];
   override maxConcurrentJob = 400;
   editor = 'normal' as const;
@@ -1132,6 +1140,91 @@ export class InstagramProvider
         status: 'success',
       },
     ];
+  }
+
+  async fetchEngagement(
+    integration: Integration,
+    token: string,
+    params: EngagementParams,
+    type = 'graph.facebook.com'
+  ): Promise<EngagementInput[]> {
+    const [accessToken] = token.split('___');
+    // With Facebook login the token is the page token, "me" is the page
+    const items: EngagementInput[] = params.kinds.includes('message')
+      ? await facebookProvider.fetchMessages(
+          `https://${type}/${META_GRAPH_API_VERSION}/me/conversations?${
+            type === 'graph.facebook.com' ? 'platform=instagram&' : ''
+          }`,
+          integration.internalId,
+          accessToken,
+          params.since
+        )
+      : [];
+    if (!params.kinds.includes('comment')) {
+      return items;
+    }
+
+    for (const post of params.posts) {
+      const { data = [] } = await (
+        await fetch(
+          `https://${type}/${META_GRAPH_API_VERSION}/${post.releaseId}/comments?fields=id,text,username,timestamp&access_token=${accessToken}`
+        )
+      )
+        .json()
+        .catch(() => ({ data: [] }));
+
+      for (const comment of data) {
+        if (
+          comment.username === integration.profile ||
+          new Date(comment.timestamp) <= params.since
+        ) {
+          continue;
+        }
+
+        items.push({
+          kind: 'comment',
+          postId: post.id,
+          externalId: comment.id,
+          threadExternalId: post.releaseId,
+          authorName: comment.username,
+          authorHandle: comment.username,
+          authorUrl: `https://www.instagram.com/${comment.username}`,
+          content: comment.text || '',
+          receivedAt: new Date(comment.timestamp),
+        });
+      }
+    }
+
+    return items;
+  }
+
+  async replyEngagement(
+    integration: Integration,
+    token: string,
+    item: EngagementTarget,
+    text: string,
+    type = 'graph.facebook.com'
+  ) {
+    const [accessToken] = token.split('___');
+    if (item.kind === 'message') {
+      return facebookProvider.sendMessage(
+        `https://${type}/${META_GRAPH_API_VERSION}/me/messages`,
+        item.threadExternalId,
+        accessToken,
+        text
+      );
+    }
+
+    const { id } = await (
+      await this.fetch(
+        `https://${type}/${META_GRAPH_API_VERSION}/${
+          item.externalId
+        }/replies?message=${encodeURIComponent(text)}&access_token=${accessToken}`,
+        { method: 'POST' }
+      )
+    ).json();
+
+    return { id };
   }
 
   private setTitle(name: string) {

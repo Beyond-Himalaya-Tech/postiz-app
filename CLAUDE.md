@@ -1,3 +1,7 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
 This project is Postiz, a tool to schedule social media and chat posts to 28+ channels.
 You can add posts to the calendar, they will be added into a workflow and posted at the right time.
 You can find things like:
@@ -13,8 +17,31 @@ We have 3 important folders
 
 - apps/backend - this is where the API code is (NESTJS)
 - apps/orchestrator - this is temporal, it's for background jobs (NESTJS) it contains all the workflows and activities
-- apps/frontend - this is the code of the frontend (Vite ReactJS)
+- apps/frontend - this is the code of the frontend (Next.js App Router, port 4200). Its `AGENTS.md` warns the Next.js version has breaking changes, so read `node_modules/next/dist/docs/` before writing Next-specific code.
 - /libraries contains a lot of services shared between backend and orchestrator and frontend components.
+
+Smaller apps: `apps/extension` (browser extension, Vite), `apps/sdk` (the `@postiz/node` SDK), `apps/commands` (CLI commands).
+
+## Commands
+
+Run everything from the repo root. Node `>=22.12 <23`, pnpm 10.
+
+- `pnpm install`: its postinstall also runs `prisma-generate`
+- `pnpm run dev:docker`: starts Postgres, Redis and Temporal (plus pgAdmin and RedisInsight) from `docker-compose.dev.yaml`
+- `pnpm run dev`: runs extension, orchestrator, backend and frontend in parallel. `pnpm run dev:backend`, `dev:frontend` and `dev:orchestrator` run one app each.
+- `pnpm run build`, or `build:backend`, `build:frontend`, `build:orchestrator`
+- `pnpm run prisma-generate` after editing `libraries/nestjs-libraries/src/database/prisma/schema.prisma`. `pnpm run prisma-db-push` applies the schema to the database. It uses `db push`, not migration files.
+- Lint: there is no lint script. Run ESLint from the root, e.g. `pnpm exec eslint apps/frontend/src/components/foo.tsx`.
+- Tests: `pnpm test` runs Jest through `@nx/jest` `getJestProjects()`, but the repo has almost no spec files. Use `pnpm exec jest path/to/file.spec.ts` for one file.
+
+Every app loads env vars from the root `.env` with `dotenv -e ../../.env`. See `.env.example` for the keys.
+
+## Architecture
+
+- **Path aliases** (`tsconfig.base.json`): `@gitroom/backend/*`, `@gitroom/frontend/*`, `@gitroom/nestjs-libraries/*`, `@gitroom/helpers/*`, `@gitroom/react/*`, etc. Shared server code (repositories, services, DTOs, integrations, Temporal client) lives in `libraries/nestjs-libraries/src` (this is the "libs/server" mentioned below). `apps/backend` mostly holds controllers.
+- **Backend API**: the authenticated app API is in `apps/backend/src/api/routes/*.controller.ts`, and the public API (API-key auth, used by the SDK, n8n and Make) is in `apps/backend/src/public-api/routes/v1`. The data layer is `libraries/nestjs-libraries/src/database/prisma/<domain>/<domain>.repository.ts` + `<domain>.service.ts`.
+- **Social providers**: each channel is a class in `libraries/nestjs-libraries/src/integrations/social/*.provider.ts`. It extends `SocialAbstract` and implements `SocialProvider` (`social.integrations.interface.ts`), and is registered in `socialIntegrationList` in `integration.manager.ts`. Each provider's frontend settings/preview UI is in `apps/frontend/src/components/new-launch/providers/<identifier>`. Put channel-specific behaviour behind a provider interface method; never add `if (provider === x)` branches to generic code.
+- **Scheduling flow**: `PostsService` (in `libraries/nestjs-libraries/src/database/prisma/posts/posts.service.ts`) starts a Temporal workflow by name (currently `postWorkflowV112`) through the Temporal client in `libraries/nestjs-libraries/src/temporal`. `apps/orchestrator` registers workflows (`src/workflows`, exported via `index.ts`) and activities (`src/activities`). Task queues are `main`, per-provider queues (identifier prefix) and the `email` queues. Post workflows are versioned files in `src/workflows/post-workflows/post.workflow.vX.Y.Z.ts`. To change one, add a new version, export it from `index.ts`, and switch the caller's workflow name (see the workflow rules below).
 
 We are using only pnpm, don't use any other dependency manager.
 Never install frontend components from npmjs, focus on writing native components.
@@ -22,7 +49,7 @@ Never install frontend components from npmjs, focus on writing native components
 The project uses tailwind 3, before writing any component look at:
 - /apps/frontend/src/app/colors.scss
 - /apps/frontend/src/app/global.scss
-- /apps/frontend/tailwind.config.js
+- /apps/frontend/tailwind.config.cjs
 
 All the --color-custom* are deprecated, don't use them.
 

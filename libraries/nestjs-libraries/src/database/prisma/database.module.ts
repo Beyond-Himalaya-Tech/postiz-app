@@ -39,6 +39,12 @@ import { SetsService } from '@gitroom/nestjs-libraries/database/prisma/sets/sets
 import { SetsRepository } from '@gitroom/nestjs-libraries/database/prisma/sets/sets.repository';
 import { ThirdPartyRepository } from '@gitroom/nestjs-libraries/database/prisma/third-party/third-party.repository';
 import { ThirdPartyService } from '@gitroom/nestjs-libraries/database/prisma/third-party/third-party.service';
+import { WebsitesRepository } from '@gitroom/nestjs-libraries/database/prisma/websites/websites.repository';
+import { WebsitesService } from '@gitroom/nestjs-libraries/database/prisma/websites/websites.service';
+import { WebsiteManager } from '@gitroom/nestjs-libraries/integrations/website/website.manager';
+import { ContentManager } from '@gitroom/nestjs-libraries/integrations/website/content/content.manager';
+import { EngagementRepository } from '@gitroom/nestjs-libraries/database/prisma/engagement/engagement.repository';
+import { EngagementService } from '@gitroom/nestjs-libraries/database/prisma/engagement/engagement.service';
 import { VideoManager } from '@gitroom/nestjs-libraries/videos/video.manager';
 import { FalService } from '@gitroom/nestjs-libraries/openai/fal.service';
 import { RefreshIntegrationService } from '@gitroom/nestjs-libraries/integrations/refresh.integration.service';
@@ -100,6 +106,12 @@ import { AdminStatsService } from '@gitroom/nestjs-libraries/database/prisma/adm
     SetsRepository,
     ThirdPartyRepository,
     ThirdPartyService,
+    WebsitesRepository,
+    WebsitesService,
+    WebsiteManager,
+    ContentManager,
+    EngagementRepository,
+    EngagementService,
     OAuthRepository,
     OAuthService,
     VideoManager,

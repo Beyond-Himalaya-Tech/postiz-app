@@ -2,6 +2,9 @@ import {
   AuthTokenDetails,
   PendingCheckResponse,
   PostDetails,
+  EngagementInput,
+  EngagementParams,
+  EngagementTarget,
   PostResponse,
   SocialProvider,
 } from '@gitroom/nestjs-libraries/integrations/social/social.integrations.interface';
@@ -683,6 +686,113 @@ export class RedditProvider extends SocialAbstract implements SocialProvider {
         status: 'published',
       },
     ];
+  }
+
+  private async redditGet(accessToken: string, url: string) {
+    return (
+      await this.fetch(
+        url,
+        {
+          method: 'GET',
+          headers: { Authorization: `Bearer ${accessToken}` },
+        },
+        'reddit',
+        0,
+        true
+      )
+    ).json();
+  }
+
+  async fetchEngagement(
+    integration: Integration,
+    accessToken: string,
+    params: EngagementParams
+  ): Promise<EngagementInput[]> {
+    const items: EngagementInput[] = [];
+    const since = params.since.getTime() / 1000;
+    const toItem = (
+      data: any,
+      kind: EngagementInput['kind'],
+      threadExternalId: string,
+      postId?: string
+    ): EngagementInput => ({
+      kind,
+      postId,
+      externalId: data.name,
+      threadExternalId,
+      authorName: data.author,
+      authorHandle: data.author,
+      authorUrl: `https://www.reddit.com/user/${data.author}`,
+      content: data.body || [data.title, data.selftext].filter(Boolean).join('\n\n'),
+      url: `https://www.reddit.com${data.permalink}`,
+      receivedAt: new Date(data.created_utc * 1000),
+    });
+
+    if (params.kinds.includes('comment')) {
+      for (const post of params.posts) {
+        const id = post.releaseId.replace(/^t3_/, '');
+        const [, comments] = await this.redditGet(
+          accessToken,
+          `https://oauth.reddit.com/comments/${id}?sort=new&limit=100&depth=1`
+        ).catch(() => []);
+
+        for (const { data } of comments?.data?.children || []) {
+          if (
+            data?.name?.startsWith('t1_') &&
+            data.author !== integration.profile &&
+            data.created_utc > since
+          ) {
+            items.push(toItem(data, 'comment', `t3_${id}`, post.id));
+          }
+        }
+      }
+    }
+
+    if (params.kinds.includes('keyword')) {
+      for (const keyword of params.keywords) {
+        const { data } = await this.redditGet(
+          accessToken,
+          `https://oauth.reddit.com/search?q=${encodeURIComponent(
+            keyword
+          )}&sort=new&t=week&limit=25&type=link`
+        ).catch(() => ({ data: { children: [] } }));
+
+        for (const child of data?.children || []) {
+          if (
+            child.data.author !== integration.profile &&
+            child.data.created_utc > since
+          ) {
+            items.push(toItem(child.data, 'keyword', child.data.name));
+          }
+        }
+      }
+    }
+
+    return items;
+  }
+
+  async replyEngagement(
+    integration: Integration,
+    accessToken: string,
+    item: EngagementTarget,
+    text: string
+  ) {
+    const { json } = await (
+      await this.fetch('https://oauth.reddit.com/api/comment', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: new URLSearchParams({
+          text,
+          thing_id: item.externalId,
+          api_type: 'json',
+        }),
+      })
+    ).json();
+
+    return { id: json?.data?.things?.[0]?.data?.name || '' };
   }
 
   @Tool({

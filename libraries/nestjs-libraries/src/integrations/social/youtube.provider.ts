@@ -3,6 +3,9 @@ import {
   AuthTokenDetails,
   PendingCheckResponse,
   PostDetails,
+  EngagementInput,
+  EngagementParams,
+  EngagementTarget,
   PostResponse,
   SocialProvider,
 } from '@gitroom/nestjs-libraries/integrations/social/social.integrations.interface';
@@ -920,6 +923,77 @@ export class YoutubeProvider extends SocialAbstract implements SocialProvider {
 
       pendingData = finalize.pendingData;
     }
+  }
+
+  async fetchEngagement(
+    integration: Integration,
+    accessToken: string,
+    params: EngagementParams
+  ): Promise<EngagementInput[]> {
+    if (!params.kinds.includes('comment')) {
+      return [];
+    }
+
+    const { client, youtube } = clientAndYoutube();
+    client.setCredentials({ access_token: accessToken });
+    const yt = youtube(client);
+    const items: EngagementInput[] = [];
+
+    for (const post of params.posts) {
+      const { data } = await yt.commentThreads
+        .list({
+          part: ['snippet'],
+          videoId: post.releaseId,
+          order: 'time',
+          maxResults: 50,
+        })
+        .catch(() => ({ data: { items: [] as any[] } }));
+
+      for (const thread of data.items || []) {
+        const comment = thread.snippet?.topLevelComment;
+        const snippet = comment?.snippet;
+        if (
+          !comment?.id ||
+          snippet?.authorChannelId?.value === integration.internalId ||
+          new Date(snippet?.publishedAt || 0) <= params.since
+        ) {
+          continue;
+        }
+
+        items.push({
+          kind: 'comment',
+          postId: post.id,
+          externalId: comment.id,
+          threadExternalId: post.releaseId,
+          authorName: snippet?.authorDisplayName || '',
+          authorHandle: snippet?.authorDisplayName || '',
+          authorUrl: snippet?.authorChannelUrl || undefined,
+          content: snippet?.textOriginal || '',
+          url: `https://www.youtube.com/watch?v=${post.releaseId}&lc=${comment.id}`,
+          receivedAt: new Date(snippet?.publishedAt || 0),
+        });
+      }
+    }
+
+    return items;
+  }
+
+  async replyEngagement(
+    integration: Integration,
+    accessToken: string,
+    item: EngagementTarget,
+    text: string
+  ) {
+    const { client, youtube } = clientAndYoutube();
+    client.setCredentials({ access_token: accessToken });
+    const { data } = await youtube(client).comments.insert({
+      part: ['snippet'],
+      requestBody: {
+        snippet: { parentId: item.externalId, textOriginal: text },
+      },
+    });
+
+    return { id: data.id! };
   }
 
   async analytics(

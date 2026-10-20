@@ -82,6 +82,48 @@ export const useMenuItem = () => {
       path: '/analytics',
     },
     {
+      name: t('websites', 'Websites'),
+      icon: (
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          width="20"
+          height="20"
+          viewBox="0 0 20 20"
+          fill="none"
+        >
+          <path
+            d="M18.5 10C18.5 14.6944 14.6944 18.5 10 18.5M18.5 10C18.5 5.30558 14.6944 1.5 10 1.5M18.5 10H1.5M10 18.5C5.30558 18.5 1.5 14.6944 1.5 10M10 18.5C12.1262 16.1723 13.3346 13.1517 13.4 10C13.3346 6.84826 12.1262 3.82766 10 1.5M10 18.5C7.87381 16.1723 6.66538 13.1517 6.6 10C6.66538 6.84826 7.87381 3.82766 10 1.5M1.5 10C1.5 5.30558 5.30558 1.5 10 1.5"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+      ),
+      path: '/websites',
+    },
+    {
+      name: t('engagement', 'Engagement'),
+      icon: (
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          width="20"
+          height="20"
+          viewBox="0 0 20 20"
+          fill="none"
+        >
+          <path
+            d="M6.5 8H13.5M6.5 11.5H11M10 18.5C14.6944 18.5 18.5 14.6944 18.5 10C18.5 5.30558 14.6944 1.5 10 1.5C5.30558 1.5 1.5 5.30558 1.5 10C1.5 11.4364 1.85633 12.7897 2.48528 13.9762L1.5 18.5L6.02382 17.5147C7.21028 18.1437 8.56358 18.5 10 18.5Z"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+      ),
+      path: '/engagement',
+    },
+    {
       name: t('media', 'Media'),
       icon: (
         <svg

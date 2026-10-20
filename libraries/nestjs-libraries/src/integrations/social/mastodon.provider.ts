@@ -1,7 +1,11 @@
+import striptags from 'striptags';
 import {
   AuthTokenDetails,
   PendingCheckResponse,
   PostDetails,
+  EngagementInput,
+  EngagementParams,
+  EngagementTarget,
   PostResponse,
   SocialProvider,
 } from '@gitroom/nestjs-libraries/integrations/social/social.integrations.interface';
@@ -562,5 +566,98 @@ export class MastodonProvider extends SocialAbstract implements SocialProvider {
       process.env.MASTODON_URL || 'https://mastodon.social',
       postDetails
     );
+  }
+
+  // The custom instance provider overrides this with the instance it connected to
+  protected engagementInstance(integration: Integration) {
+    return process.env.MASTODON_URL || 'https://mastodon.social';
+  }
+
+  async fetchEngagement(
+    integration: Integration,
+    accessToken: string,
+    params: EngagementParams
+  ): Promise<EngagementInput[]> {
+    const url = this.engagementInstance(integration);
+    const headers = { Authorization: `Bearer ${accessToken}` };
+    const items: EngagementInput[] = [];
+    const toItem = (
+      status: any,
+      kind: EngagementInput['kind'],
+      threadExternalId: string,
+      postId?: string
+    ): EngagementInput => ({
+      kind,
+      postId,
+      externalId: status.id,
+      threadExternalId,
+      authorName: status.account?.display_name || status.account?.acct,
+      authorHandle: status.account?.acct,
+      authorUrl: status.account?.url,
+      content: striptags(status.content || ''),
+      url: status.url,
+      receivedAt: new Date(status.created_at),
+    });
+    const isNew = (status: any) =>
+      status.account?.id !== integration.internalId &&
+      new Date(status.created_at) > params.since;
+
+    if (params.kinds.includes('comment')) {
+      for (const post of params.posts) {
+        const { descendants = [] } = await (
+          await fetch(`${url}/api/v1/statuses/${post.releaseId}/context`, {
+            headers,
+          })
+        )
+          .json()
+          .catch(() => ({ descendants: [] }));
+        for (const status of descendants.filter(isNew)) {
+          items.push(toItem(status, 'comment', post.releaseId, post.id));
+        }
+      }
+    }
+
+    if (params.kinds.includes('keyword')) {
+      for (const keyword of params.keywords) {
+        const { statuses = [] } = await (
+          await fetch(
+            `${url}/api/v2/search?type=statuses&limit=20&q=${encodeURIComponent(
+              keyword
+            )}`,
+            { headers }
+          )
+        )
+          .json()
+          .catch(() => ({ statuses: [] }));
+        for (const status of statuses.filter(isNew)) {
+          items.push(toItem(status, 'keyword', status.id));
+        }
+      }
+    }
+
+    return items;
+  }
+
+  async replyEngagement(
+    integration: Integration,
+    accessToken: string,
+    item: EngagementTarget,
+    text: string
+  ) {
+    const { id } = await (
+      await this.fetch(
+        `${this.engagementInstance(integration)}/api/v1/statuses`,
+        {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ status: text, in_reply_to_id: item.externalId }),
+        }
+      )
+    ).json();
+
+    return { id };
   }
 }

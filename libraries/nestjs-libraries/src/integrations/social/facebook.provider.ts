@@ -3,6 +3,9 @@ import {
   AuthTokenDetails,
   PendingCheckResponse,
   PostDetails,
+  EngagementInput,
+  EngagementParams,
+  EngagementTarget,
   PostResponse,
   SocialProvider,
 } from '@gitroom/nestjs-libraries/integrations/social/social.integrations.interface';
@@ -39,6 +42,8 @@ export class FacebookProvider extends SocialAbstract implements SocialProvider {
     'pages_manage_engagement',
     'pages_read_engagement',
     'read_insights',
+    // Direct messages in the engagement inbox, opt in: needs Meta app review
+    ...(process.env.ENGAGEMENT_MESSAGES === 'true' ? ['pages_messaging'] : []),
   ];
   override maxConcurrentJob = 500; // Facebook has reasonable rate limits
   editor = 'normal' as const;
@@ -1022,6 +1027,153 @@ export class FacebookProvider extends SocialAbstract implements SocialProvider {
         status: 'success',
       },
     ];
+  }
+
+  async fetchEngagement(
+    integration: Integration,
+    accessToken: string,
+    params: EngagementParams
+  ): Promise<EngagementInput[]> {
+    const items: EngagementInput[] = params.kinds.includes('message')
+      ? await this.fetchMessages(
+          `https://graph.facebook.com/${META_GRAPH_API_VERSION}/me/conversations?`,
+          integration.internalId,
+          accessToken,
+          params.since
+        )
+      : [];
+    if (!params.kinds.includes('comment')) {
+      return items;
+    }
+
+    for (const post of params.posts) {
+      const { data = [] } = await (
+        await fetch(
+          `https://graph.facebook.com/${META_GRAPH_API_VERSION}/${post.releaseId}/comments?fields=id,message,from,created_time,permalink_url&filter=stream&order=reverse_chronological&since=${Math.floor(
+            params.since.getTime() / 1000
+          )}&access_token=${accessToken}`
+        )
+      )
+        .json()
+        .catch(() => ({ data: [] }));
+
+      for (const comment of data) {
+        if (comment.from?.id === integration.internalId) {
+          continue;
+        }
+
+        items.push({
+          kind: 'comment',
+          postId: post.id,
+          externalId: comment.id,
+          threadExternalId: post.releaseId,
+          authorName: comment.from?.name || 'Facebook user',
+          authorHandle: comment.from?.id || '',
+          content: comment.message || '',
+          url: comment.permalink_url,
+          receivedAt: new Date(comment.created_time),
+        });
+      }
+    }
+
+    return items;
+  }
+
+  // Shared with Instagram, both read the page inbox the same way
+  async fetchMessages(
+    conversationsUrl: string,
+    ownId: string,
+    accessToken: string,
+    since: Date
+  ): Promise<EngagementInput[]> {
+    const { data = [] } = await (
+      await fetch(
+        `${conversationsUrl}fields=updated_time,messages.limit(5){id,message,from,created_time}&access_token=${accessToken}`
+      )
+    )
+      .json()
+      .catch(() => ({ data: [] }));
+
+    const items: EngagementInput[] = [];
+    for (const conversation of data) {
+      for (const message of conversation.messages?.data || []) {
+        if (
+          message.from?.id === ownId ||
+          new Date(message.created_time) <= since
+        ) {
+          continue;
+        }
+
+        items.push({
+          kind: 'message',
+          externalId: message.id,
+          // Replies go to the sender, Meta only allows it within 24 hours
+          threadExternalId: message.from?.id,
+          authorName:
+            message.from?.name || message.from?.username || 'Unknown',
+          authorHandle: message.from?.username || message.from?.id,
+          content: message.message || '',
+          receivedAt: new Date(message.created_time),
+        });
+      }
+    }
+
+    return items;
+  }
+
+  async sendMessage(
+    messagesUrl: string,
+    recipientId: string,
+    accessToken: string,
+    text: string
+  ) {
+    const { message_id } = await (
+      await this.fetch(
+        `${messagesUrl}?access_token=${accessToken}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            recipient: { id: recipientId },
+            messaging_type: 'RESPONSE',
+            message: { text },
+          }),
+        },
+        'send message'
+      )
+    ).json();
+
+    return { id: message_id };
+  }
+
+  async replyEngagement(
+    integration: Integration,
+    accessToken: string,
+    item: EngagementTarget,
+    text: string
+  ) {
+    if (item.kind === 'message') {
+      return this.sendMessage(
+        `https://graph.facebook.com/${META_GRAPH_API_VERSION}/me/messages`,
+        item.threadExternalId,
+        accessToken,
+        text
+      );
+    }
+
+    const { id } = await (
+      await this.fetch(
+        `https://graph.facebook.com/${META_GRAPH_API_VERSION}/${item.externalId}/comments?access_token=${accessToken}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message: text }),
+        },
+        'reply to comment'
+      )
+    ).json();
+
+    return { id };
   }
 
   async analytics(

@@ -1,0 +1,18 @@
+# Builds Postiz from this checkout instead of pulling the published image.
+# Use together with docker-compose.yaml:
+#   docker compose -p postiz-local -f docker-compose.yaml -f docker-compose.local.yaml up -d --build
+# App: http://localhost:4007 (the image runs prisma db push on start)
+
+services:
+  postiz:
+    image: postiz-app:local
+    pull_policy: build
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    environment:
+      # Websites / SEO data sources, read from the root .env
+      GOOGLE_SEO_CLIENT_ID: ${GOOGLE_SEO_CLIENT_ID:-}
+      GOOGLE_SEO_CLIENT_SECRET: ${GOOGLE_SEO_CLIENT_SECRET:-}
+      YANDEX_CLIENT_ID: ${YANDEX_CLIENT_ID:-}
+      YANDEX_CLIENT_SECRET: ${YANDEX_CLIENT_SECRET:-}
