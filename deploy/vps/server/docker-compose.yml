@@ -108,6 +108,9 @@ services:
       - POSTGRES_SEEDS=temporal-postgresql
       - DYNAMIC_CONFIG_FILE_PATH=config/dynamicconfig/development-sql.yaml
       - ENABLE_ES=false
+      # Postgres visibility allows only 3 Text search attributes. The sample
+      # Custom*Field ones take 2 and Postiz needs 2 (postId, organizationId)
+      - SKIP_ADD_CUSTOM_SEARCH_ATTRIBUTES=true
       - DEFAULT_NAMESPACE=default
     volumes:
       - ./dynamicconfig:/etc/temporal/config/dynamicconfig:ro
