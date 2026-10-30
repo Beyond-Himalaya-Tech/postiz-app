@@ -1,0 +1,143 @@
+# Production stack for one server. Lives in /opt/postiz on the server and
+# reads its settings from /opt/postiz/.env (see env.example).
+# Only Caddy publishes ports; everything else talks over the internal network.
+name: postiz
+
+services:
+  caddy:
+    image: caddy:2.10
+    restart: always
+    ports:
+      - '80:80'
+      - '443:443'
+      - '443:443/udp'
+    environment:
+      POSTIZ_DOMAIN: ${POSTIZ_DOMAIN:?set POSTIZ_DOMAIN in .env}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - postiz
+
+  postiz:
+    # The deploy workflow builds the image on this server (no registry), so
+    # never try to pull it
+    image: postiz-app:${POSTIZ_TAG:?set POSTIZ_TAG in .env}
+    pull_policy: never
+    restart: always
+    # Same as the image's default (nginx + pm2-run) minus `prisma db push`:
+    # deploy.sh applies schema changes once, before the new image goes live.
+    command: ['sh', '-c', 'nginx && (pm2 delete all || true) && pnpm run --parallel pm2 && pm2 logs']
+    env_file: .env
+    environment:
+      MAIN_URL: https://${POSTIZ_DOMAIN}
+      FRONTEND_URL: https://${POSTIZ_DOMAIN}
+      NEXT_PUBLIC_BACKEND_URL: https://${POSTIZ_DOMAIN}/api
+      BACKEND_INTERNAL_URL: http://localhost:3000
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      REDIS_URL: redis://redis:6379
+      TEMPORAL_ADDRESS: temporal:7233
+      IS_GENERAL: 'true'
+      # Starts the hourly missed-post sweep, which re-queues posts Temporal lost
+      RUN_CRON: 'true'
+      STORAGE_PROVIDER: local
+      UPLOAD_DIRECTORY: /uploads
+      NEXT_PUBLIC_UPLOAD_DIRECTORY: /uploads
+      NX_ADD_PLUGINS: 'false'
+    volumes:
+      - postiz-uploads:/uploads
+      - postiz-config:/config
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      temporal:
+        condition: service_healthy
+
+  postgres:
+    image: postgres:17-alpine
+    restart: always
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:?set POSTGRES_DB in .env}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  redis:
+    image: redis:7.2
+    restart: always
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: redis-cli ping
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  temporal-postgresql:
+    image: postgres:16
+    restart: always
+    environment:
+      POSTGRES_USER: ${TEMPORAL_DB_USER:?set TEMPORAL_DB_USER in .env}
+      POSTGRES_PASSWORD: ${TEMPORAL_DB_PASSWORD:?set TEMPORAL_DB_PASSWORD in .env}
+    volumes:
+      - temporal-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: pg_isready -U ${TEMPORAL_DB_USER}
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  # Visibility (search) runs on Postgres, so no Elasticsearch is needed
+  temporal:
+    image: temporalio/auto-setup:1.28.1
+    restart: always
+    environment:
+      - DB=postgres12
+      - DB_PORT=5432
+      - POSTGRES_USER=${TEMPORAL_DB_USER}
+      - POSTGRES_PWD=${TEMPORAL_DB_PASSWORD}
+      - POSTGRES_SEEDS=temporal-postgresql
+      - DYNAMIC_CONFIG_FILE_PATH=config/dynamicconfig/development-sql.yaml
+      - ENABLE_ES=false
+      - DEFAULT_NAMESPACE=default
+    volumes:
+      - ./dynamicconfig:/etc/temporal/config/dynamicconfig:ro
+    depends_on:
+      temporal-postgresql:
+        condition: service_healthy
+    healthcheck:
+      # Waits for the namespace too, auto-setup creates it after the server is up
+      test: ['CMD', 'temporal', 'operator', 'namespace', 'describe', '--namespace', 'default', '--address', 'temporal:7233']
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 60s
+
+  # Reach it from your laptop through an SSH tunnel (see README)
+  temporal-ui:
+    image: temporalio/ui:2.34.0
+    restart: always
+    environment:
+      - TEMPORAL_ADDRESS=temporal:7233
+    ports:
+      - '127.0.0.1:8080:8080'
+    depends_on:
+      - temporal
+
+volumes:
+  caddy-data:
+  caddy-config:
+  postiz-uploads:
+  postiz-config:
+  postgres-data:
+  redis-data:
+  temporal-postgres-data:

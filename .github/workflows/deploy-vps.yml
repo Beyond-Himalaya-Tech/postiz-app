@@ -1,0 +1,73 @@
+---
+name: "Deploy to server"
+
+# Sends the source to the server over SSH, which builds the image from
+# Dockerfile.dev itself (no registry, and the server can be ARM), then runs
+# deploy.sh there. The SSH key can only run /usr/local/sbin/postiz-ci on the
+# server. Setup: deploy/vps/README.md
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: 'Redeploy an image already on the server (full commit SHA) instead of building, e.g. to roll back. The database is left as it is.'
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-vps
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      IMAGE_TAG: ${{ inputs.image_tag || github.sha }}
+      # Rollbacks run an older image whose schema is behind the database
+      DEPLOY_FLAGS: ${{ inputs.image_tag && '--keep-schema' || '' }}
+      RELEASE_ID: ${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up SSH
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
+          DEPLOY_KNOWN_HOSTS: ${{ vars.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          cat > ~/.ssh/config <<EOF
+          Host server
+            HostName $DEPLOY_HOST
+            User deploy
+            IdentityFile ~/.ssh/deploy_key
+            IdentitiesOnly yes
+            BatchMode yes
+            StrictHostKeyChecking yes
+            ServerAliveInterval 30
+          EOF
+
+      # Takes 15-30 minutes; the live version keeps running meanwhile
+      - name: Build image on the server
+        if: ${{ !inputs.image_tag }}
+        run: git archive --format=tar.gz HEAD | ssh server build "$IMAGE_TAG"
+
+      - name: Send release files
+        run: |
+          mkdir -p release/dynamicconfig
+          cp -r deploy/vps/server/. release/
+          cp dynamicconfig/development-sql.yaml release/dynamicconfig/
+          tar -C release -czf - . | ssh server install-release "$RELEASE_ID"
+
+      - name: Deploy on the server
+        run: ssh server deploy "$RELEASE_ID" "$IMAGE_TAG" $DEPLOY_FLAGS

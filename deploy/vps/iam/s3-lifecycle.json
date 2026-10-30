@@ -1,0 +1,24 @@
+{
+  "Rules": [
+    {
+      "ID": "expire-database-dumps-after-30-days",
+      "Status": "Enabled",
+      "Filter": { "Prefix": "backups/" },
+      "Expiration": { "Days": 30 },
+      "NoncurrentVersionExpiration": { "NoncurrentDays": 30 }
+    },
+    {
+      "ID": "keep-media-but-expire-overwritten-copies",
+      "Status": "Enabled",
+      "Filter": { "Prefix": "uploads/" },
+      "NoncurrentVersionExpiration": { "NoncurrentDays": 30 }
+    },
+    {
+      "ID": "clean-up-failed-uploads-and-delete-markers",
+      "Status": "Enabled",
+      "Filter": {},
+      "AbortIncompleteMultipartUpload": { "DaysAfterInitiation": 7 },
+      "Expiration": { "ExpiredObjectDeleteMarker": true }
+    }
+  ]
+}

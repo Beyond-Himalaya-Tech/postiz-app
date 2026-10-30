@@ -5,6 +5,7 @@ dist
 tmp
 /out-tsc
 .env
+backup.env
 .apple
 # dependencies
 node_modules
