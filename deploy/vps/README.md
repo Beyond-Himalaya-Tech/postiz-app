@@ -230,15 +230,8 @@ Each deploy ends by checking that `missing-post-workflow` is running in
 Temporal. That is the hourly sweep that re-queues posts Temporal lost, and it
 only runs with `RUN_CRON` set (the compose file sets it).
 
-**Not tested before first use:** these scripts were checked for syntax and
-the compose file validates, but nothing has run on a real server yet, and
-this fork has not been built for ARM before. Watch the first deploy's log in
-GitHub Actions. The schema check looks for Prisma's
-`-- This is an empty migration.` line; if a deploy with no schema change
-reports one, check that text in the log. `cron_running` reads the text output of
-`temporal workflow describe`; if the first deploy says the missed-post sweep
-isn't running while the Temporal UI shows `missing-post-workflow` as
-Running, the output format differs and the check needs adjusting.
+The schema check looks for Prisma's `-- This is an empty migration.` line; if
+a deploy with no schema change reports one, check that text in the log.
 
 ## Runbook
 
