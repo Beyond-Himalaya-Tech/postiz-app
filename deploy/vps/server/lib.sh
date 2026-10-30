@@ -56,7 +56,8 @@ wait_healthy() {
 cron_running() {
   docker compose exec -T temporal temporal workflow describe \
     --address temporal:7233 --namespace default \
-    --workflow-id missing-post-workflow 2>/dev/null | grep -Eiq 'Status +(WORKFLOW_EXECUTION_STATUS_)?RUNNING'
+    --workflow-id missing-post-workflow -o json 2>/dev/null \
+    | grep -q '"status": "WORKFLOW_EXECUTION_STATUS_RUNNING"'
 }
 
 # Images only exist on this server (the deploy workflow builds them here), and
