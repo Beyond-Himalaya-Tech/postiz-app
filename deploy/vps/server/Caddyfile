@@ -1,0 +1,12 @@
+# Caddy gets and renews the HTTPS certificate for POSTIZ_DOMAIN automatically.
+# The DNS A record must point at this server's Elastic IP before first start.
+{$POSTIZ_DOMAIN} {
+	encode zstd gzip
+
+	# Matches client_max_body_size in var/docker/nginx.conf
+	request_body {
+		max_size 2GB
+	}
+
+	reverse_proxy postiz:5000
+}

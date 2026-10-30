@@ -1,0 +1,29 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "ListBackupsAndUploads",
+      "Effect": "Allow",
+      "Action": "s3:ListBucket",
+      "Resource": "arn:aws:s3:::BACKUP_BUCKET",
+      "Condition": {
+        "StringLike": { "s3:prefix": ["backups/*", "uploads/*"] }
+      }
+    },
+    {
+      "Sid": "AddAndReadButNeverDelete",
+      "Effect": "Allow",
+      "Action": [
+        "s3:PutObject",
+        "s3:PutObjectAcl",
+        "s3:GetObject",
+        "s3:GetObjectVersion",
+        "s3:AbortMultipartUpload"
+      ],
+      "Resource": [
+        "arn:aws:s3:::BACKUP_BUCKET/backups/*",
+        "arn:aws:s3:::BACKUP_BUCKET/uploads/*"
+      ]
+    }
+  ]
+}
