@@ -15,6 +15,7 @@ services:
       POSTIZ_DOMAIN: ${POSTIZ_DOMAIN:?set POSTIZ_DOMAIN in .env}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./sites:/etc/caddy/sites:ro
       - caddy-data:/data
       - caddy-config:/config
     depends_on:

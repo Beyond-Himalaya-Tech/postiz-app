@@ -10,3 +10,7 @@
 
 	reverse_proxy postiz:5000
 }
+
+# Other apps on this server add their own site blocks as /opt/postiz/sites/*.caddy.
+# Deploys never touch that folder, and an empty folder is fine
+import /etc/caddy/sites/*.caddy

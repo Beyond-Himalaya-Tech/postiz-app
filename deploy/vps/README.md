@@ -247,6 +247,7 @@ Log in with `ssh ubuntu@<server-ip>`, then `sudo -i` and `cd /opt/postiz`.
 | Changed `.env` | `docker compose up -d postiz` (a plain restart does not reload `.env`) |
 | Open the Temporal UI | On your laptop: `ssh -L 8080:localhost:8080 ubuntu@<server-ip>`, then open `http://localhost:8080` |
 | Disk filling up | `df -h`, `docker system df`. Uploads live in the `postiz_postiz-uploads` volume |
+| Put another app on its own subdomain | Point its DNS A record at the server, join the app's web container to the `postiz_default` network, add `/opt/postiz/sites/<app>.caddy` with `<domain> { reverse_proxy <container>:<port> }`, then `docker compose exec caddy caddy reload --config /etc/caddy/Caddyfile` |
 | Oracle reclaimed or lost the server | Create a new one (steps 3-8), copy `.env` and `backup.env` back, deploy, then `SKIP_PRE_RESTORE_BACKUP=1 ./restore.sh` the newest nightly backup, then bring the media back: `bash -c 'source lib.sh && backup_store_setup && rclone copy "store:$BACKUP_BUCKET/uploads/" "$(uploads_dir)"'` |
 
 **Never run `docker compose down -v`.** The `-v` deletes every database volume.
